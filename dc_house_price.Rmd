@@ -1,0 +1,187 @@
+---
+title: "Washington D.C. Property Price Analysis and Prediction"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Overview
+
+1. Purpose
+2. Dataset
+3. Methodology
+4. Modelling
+
+## Preparation
+
+[Metadata](https://www.arcgis.com/sharing/rest/content/items/c5fb3fbe4c694a59a6eef7bf5f8bc49a/info/metadata/metadata.xml?format=default&output=html)
+
+```{r warning=FALSE, message=FALSE}
+# import packages
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(RCurl)
+library(ggmap)
+library(bitops)
+library(GGally)
+library(corrplot)
+```
+
+### __Dataset Overview__
+
+```{r}
+# read the dataset
+house.price <- read.csv('DC_Properties.csv', na.strings = c("", "NA"))
+```
+
+```{r}
+# show column structures
+str(house.price)
+```
+
+```{r}
+# show first a few rows 
+kable(head(house.price)) %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "500px")
+```
+
+### __Dependent Variable: *Price*__
+```{r}
+# drop rows with price as NA
+house.price <- house.price[complete.cases(house.price[ , "PRICE"]), ]
+```
+
+```{r warning=FALSE}
+# histogram independent variable "Price"
+ggplot(house.price, aes(x = PRICE)) + 
+  geom_histogram(binwidth = 10000,
+                 col = "red",
+                 fill = "green",
+                 alpha = .25) +
+  labs(title = "Washington D.C House Price Histogram") +
+  labs(x = "Price", y = "Count") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlim(c(0, 2000000))
+```
+
+```{r}
+summary(house.price$PRICE)
+```
+
+### __Prices on Map__
+```{r include=FALSE}
+sbbox <- make_bbox(lon = house.price$LONGITUDE, lat = house.price$LATITUDE, f = .1)
+dc_map <- get_stamenmap(sbbox, zoom = 12, maptype = "toner-lite")
+
+price_group <- c(seq(0, 1000000, by = 200000), Inf)
+price_label <- c("<200k", "<400k", "<600k", "<800k", "<1mil", ">1mil")
+```
+
+```{r warning=FALSE}
+ggmap(dc_map) + 
+  geom_point(data = house.price, 
+             aes(LONGITUDE, LATITUDE,
+                 color = cut(PRICE, price_group)), 
+             size = 0.1, alpha = 0.1) +
+  labs(title = "Washington D.C House Price Heat Map") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  scale_color_brewer(palette = "Oranges",
+                     name = "Price Range",
+                     labels = price_label)
+```
+
+### __Preprocessing: *Select Rows of Interest*__
+
+```{r}
+house.price$SALEDATE <- substr(house.price$SALEDATE, 0, 10)
+house.price$SALEDATE <- as.Date(house.price$SALEDATE)
+
+sale.year <- as.numeric(substr(house.price[, "SALEDATE"], 0, 4))
+sale.year <- sale.year[!is.na(sale.year)]
+hist(sale.year,
+     breaks = c(-Inf, seq(1990, 2018, 1)),
+     xlim = c(1990, 2018),
+     main = "Sales by Year",
+     xlab = "Year",
+     border = 'blue', col = 'green',
+     prob = T)
+axis(side = 1, at = c(2015, 2018))
+lines(density(sale.year), col = 'red')
+```
+
+```{r}
+quantile(sale.year, probs = seq(0, 1, 0.1))
+```
+
+```{r}
+# drop sales made before 2016.01.01.
+house.price <- subset(house.price, SALEDATE > as.Date("2015-12-31"))
+```
+
+### __Preprocessing: *Filter Useless Variables*__
+
+```{r}
+# drop redundant or single-value variables
+house.price <- select(house.price, -c("X.1", "CITY", "STATE", "X", "Y"))
+```
+
+```{r}
+# count NA for each variable
+na_count <- sapply(house.price, function(y) {
+    sum(length(which(is.na(y))))
+  })
+
+# all the variables with NA's
+na_count <- na_count[na_count != 0]
+# variable and the number of NA's
+print(na_count)
+```
+
+```{r}
+na_cols <- names(na_count)
+na_cols <- na_cols[!na_cols %in% c("AYB", "QUADRANT")]
+house.price <- select(house.price, -na_cols)
+house.price <- house.price[complete.cases(house.price), ]
+```
+
+```{r}
+print(levels(house.price$GIS_LAST_MOD_DTTM))
+house.price <- select(house.price, -c("GIS_LAST_MOD_DTTM"))
+```
+
+------
+
+```{r}
+numeric_cols <- names(select_if(house.price, is.numeric))
+print(numeric_cols)
+```
+
+```{r}
+numeric_cols <- numeric_cols[!numeric_cols %in% c("USECODE", "ZIPCODE")]
+corr <- cor(house.price[, numeric_cols])
+corrplot.mixed(corr, number.cex = .75, tl.pos = "lt")
+```
+
+```{r}
+house.price <- subset(house.price, -c("SALE_NUM", "BLDG_NUM", "FIREPLACES"))
+```
+
+```{r}
+categorical_cols <- names(house.price)[!names(house.price) %in% numeric_cols]
+categorical_cols <- c(categorical_cols)
+```
+
+
+------
+
+[kable](https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html)
+[Mapping](http://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html#)
+[ggmap Github](https://github.com/dkahle/ggmap)
+[ggmap stamen](https://rdrr.io/cran/ggmap/man/get_stamenmap.html)
+[corrplot](https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html)
