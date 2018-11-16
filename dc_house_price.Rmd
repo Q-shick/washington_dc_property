@@ -17,16 +17,23 @@ output:
 [Metadata](https://www.arcgis.com/sharing/rest/content/items/c5fb3fbe4c694a59a6eef7bf5f8bc49a/info/metadata/metadata.xml?format=default&output=html)
 
 ```{r warning=FALSE, message=FALSE}
-# import packages
-library(dplyr)
-library(ggplot2)
-library(knitr)
-library(kableExtra)
-library(RCurl)
-library(ggmap)
-library(bitops)
-library(GGally)
-library(corrplot)
+library(dplyr)      # df manipulation
+library(ggplot2)    # graphical plot
+library(grid)       # grid plot
+library(gridExtra)  # grid extension
+library(knitr)      # pretty print
+library(kableExtra) # print styling
+library(stringr)    # handle strings
+library(RCurl)      # ?
+library(ggmap)      # geographical map
+library(bitops)     # ?
+library(GGally)     # ?
+library(corrplot)   # correlation matrix
+library(car)        # VIF
+library(lmtest)     # non-constant variance test
+library(MASS)       # AIC
+library(leaps)      # model selection
+library(DAAG)       # cross-validation
 ```
 
 ### __Dataset Overview__
@@ -34,7 +41,33 @@ library(corrplot)
 ```{r}
 # read the dataset
 house.price <- read.csv('DC_Properties.csv', na.strings = c("", "NA"))
+education <- read.csv('DCPS School Scorecard 2017-18.csv')
 ```
+
+```{r}
+education$math_pct_5_current <- as.numeric(str_extract_all(
+  education$math_pct_1_current, "\\d+(\\.\\d+){0,1}"))
+education$ela_pct_5_current <- as.numeric(str_extract_all(
+  education$ela_pct_1_current, "\\d+(\\.\\d+){0,1}"))
+
+education <- education[complete.cases(education[ , 
+  c("math_pct_5_current", "ela_pct_5_current")]), ]
+
+math_eng <- education %>%
+  group_by(Dir_Zip) %>%
+  summarise(math = mean(math_pct_5_current), 
+            eng = mean(ela_pct_5_current)) %>%
+  arrange(Dir_Zip)
+```
+
+```{r}
+# merge education features with house price
+colnames(math_eng)[1] <- "ZIPCODE"
+math_eng$math_eng <- with(math_eng, math + eng)
+math_eng <- subset(math_eng, select = c(ZIPCODE, math_eng))
+house.price <- merge(house.price, math_eng[, "math_eng"], by = "ZIPCODE")
+```
+
 
 ```{r}
 # show column structures
@@ -48,55 +81,7 @@ kable(head(house.price)) %>%
   scroll_box(width = "100%", height = "500px")
 ```
 
-### __Dependent Variable: *Price*__
-```{r}
-# drop rows with price as NA
-house.price <- house.price[complete.cases(house.price[ , "PRICE"]), ]
-```
-
-```{r warning=FALSE}
-# histogram independent variable "Price"
-ggplot(house.price, aes(x = PRICE)) + 
-  geom_histogram(binwidth = 10000,
-                 col = "red",
-                 fill = "green",
-                 alpha = .25) +
-  labs(title = "Washington D.C House Price Histogram") +
-  labs(x = "Price", y = "Count") +
-  theme(plot.title = element_text(hjust = 0.5)) +
-  xlim(c(0, 2000000))
-```
-
-```{r}
-summary(house.price$PRICE)
-```
-
-### __Prices on Map__
-```{r include=FALSE}
-sbbox <- make_bbox(lon = house.price$LONGITUDE, lat = house.price$LATITUDE, f = .1)
-dc_map <- get_stamenmap(sbbox, zoom = 12, maptype = "toner-lite")
-
-price_group <- c(seq(0, 1000000, by = 200000), Inf)
-price_label <- c("<200k", "<400k", "<600k", "<800k", "<1mil", ">1mil")
-```
-
-```{r warning=FALSE}
-ggmap(dc_map) + 
-  geom_point(data = house.price, 
-             aes(LONGITUDE, LATITUDE,
-                 color = cut(PRICE, price_group)), 
-             size = 0.1, alpha = 0.1) +
-  labs(title = "Washington D.C House Price Heat Map") +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks.y = element_blank()) +
-  scale_color_brewer(palette = "Oranges",
-                     name = "Price Range",
-                     labels = price_label)
-```
-
-### __Preprocessing: *Select Rows of Interest*__
+### __Preprocessing: *Rows of Interest*__
 
 ```{r}
 house.price$SALEDATE <- substr(house.price$SALEDATE, 0, 10)
@@ -122,9 +107,86 @@ quantile(sale.year, probs = seq(0, 1, 0.1))
 ```{r}
 # drop sales made before 2016.01.01.
 house.price <- subset(house.price, SALEDATE > as.Date("2015-12-31"))
+house.price <- subset(house.price, select = -SALEDATE)
 ```
 
-### __Preprocessing: *Filter Useless Variables*__
+
+### __Dependent Variable: *Price*__
+
+```{r}
+# drop rows with price as NA
+house.price <- house.price[complete.cases(house.price[ , "PRICE"]), ]
+```
+
+```{r warning=FALSE}
+# histogram independent variable "Price"
+ggplot(house.price, aes(x = PRICE)) + 
+  geom_histogram(binwidth = 10000,
+                 col = "red",
+                 fill = "green",
+                 alpha = .25) +
+  labs(title = "Washington D.C House Price Histogram") +
+  labs(x = "Price", y = "Count") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlim(c(0, 2000000))
+```
+
+```{r}
+summary(house.price$PRICE)
+```
+
+
+### __On the Map__
+
+```{r include=FALSE}
+sbbox <- make_bbox(lon = house.price$LONGITUDE, lat = house.price$LATITUDE, f = 0.1)
+dc_map <- get_stamenmap(sbbox, zoom = 12, maptype = "toner-lite")
+
+price_group <- c(seq(0, 1000000, by = 200000), Inf)
+price_label <- c("<200k", "<400k", "<600k", "<800k", "<1mil", ">1mil")
+```
+
+```{r warning=FALSE}
+ggmap(dc_map) + 
+  geom_point(data = house.price, 
+             aes(LONGITUDE, LATITUDE,
+                 color = cut(PRICE, price_group)), 
+             size = 0.3, alpha = 0.3) +
+  labs(title = "Washington D.C House Price Heat Map") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  scale_color_brewer(palette = "Oranges",
+                     name = "Price Range",
+                     labels = price_label)
+```
+
+```{r}
+# no need of geographical points
+house.price <- select(house.price, -c("LATITUDE", "LONGITUDE"))
+```
+
+
+### __Handle Outliers__
+
+```{r}
+lowerq <- quantile(house.price$PRICE)[2]
+upperq <- quantile(house.price$PRICE)[4]
+iqr <- upperq - lowerq
+lower.threshold <- lowerq - (iqr*1.5)
+upper.threshold <- upperq + (iqr*1.5)
+
+cat("Lower Outlier Threshold:", lower.threshold,
+    "\nUpper Outlier Threshold:", upper.threshold)
+```
+
+```{r}
+house.price <- house.price[house.price$PRICE < upper.threshold, ]
+```
+
+
+### __Preprocessing: *Drop Variables*__
 
 ```{r}
 # drop redundant or single-value variables
@@ -144,44 +206,299 @@ print(na_count)
 ```
 
 ```{r}
+cat("PRICE with 'NA' STORIES\n")
+print(summary(house.price[is.na(house.price$STORIES), 'PRICE']))
+
+cat("\nPRICE with STORIES Available\n")
+print(summary(house.price[!is.na(house.price$STORIES), 'PRICE']))
+```
+
+```{r}
+# cat("Number of Condominiums:", 
+#     pull(count(house.price[house.price$SOURCE == 'Condominium', ])))
+```
+
+```{r}
+# cat("\nCorrelation of NUM_UNITS vs. PRICE\n")
+# cor(house.price[!is.na(house.price$NUM_UNITS), c('PRICE', 'NUM_UNITS')])
+# 
+# cat("\nCorrelation of STORIES vs. PRICE\n")
+# cor(house.price[!is.na(house.price$STORIES), c('PRICE', 'STORIES')])
+# 
+# cat("\nCorrelation of GBA vs. PRICE\n")
+# cor(house.price[!is.na(house.price$GBA), c('PRICE', 'GBA')])
+# 
+# cat("\nCorrelation of LIVING_GBA vs. PRICE\n")
+# cor(house.price[!is.na(house.price$LIVING_GBA), c('PRICE', 'LIVING_GBA')])
+```
+
+```{r}
+# drop variables with too many NA's
 na_cols <- names(na_count)
-na_cols <- na_cols[!na_cols %in% c("AYB", "QUADRANT")]
+na_cols <- na_cols[!na_cols %in% c("AYB", "YR_RMDL", "QUADRANT")]
 house.price <- select(house.price, -na_cols)
+```
+
+```{r}
+# transform YR_RMDL by encoding into Yes or No
+house.price$RMDL <- ifelse(is.na(house.price$YR_RMDL), "N", "Y")
+```
+
+```{r}
+# fine tuning and complete set
+cat("GIS values:")
+print(levels(house.price$GIS_LAST_MOD_DTTM))
+house.price <- select(house.price, -c("GIS_LAST_MOD_DTTM", "YR_RMDL"))
 house.price <- house.price[complete.cases(house.price), ]
 ```
 
-```{r}
-print(levels(house.price$GIS_LAST_MOD_DTTM))
-house.price <- select(house.price, -c("GIS_LAST_MOD_DTTM"))
-```
 
 ------
 
+## __Correlation Analysis__
+
+### __Numerical Variables and Multicollinearity__
+
 ```{r}
+# ZIPCODE, USECODE are more of categorical data
+house.price$ZIPCODE <- as.factor(house.price$ZIPCODE)
+house.price$USECODE <- as.factor(house.price$USECODE)
+
 numeric_cols <- names(select_if(house.price, is.numeric))
 print(numeric_cols)
 ```
 
 ```{r}
-numeric_cols <- numeric_cols[!numeric_cols %in% c("USECODE", "ZIPCODE")]
 corr <- cor(house.price[, numeric_cols])
 corrplot.mixed(corr, number.cex = .75, tl.pos = "lt")
 ```
 
 ```{r}
-house.price <- subset(house.price, -c("SALE_NUM", "BLDG_NUM", "FIREPLACES"))
+# drop unrelated variables
+house.price <- subset(house.price, select = -c(SALE_NUM, BLDG_NUM, FIREPLACES))
 ```
 
 ```{r}
+# test for multicollinearity of numerical variables
+temp.model1 <- lm(PRICE ~ BATHRM + HF_BATHRM + ROOMS + BEDRM + 
+                    AYB + EYB + LANDAREA, data = house.price)
+cat("[VIF with All]\n")
+print(vif(temp.model1))
+
+temp.model2 <- lm(PRICE ~ BATHRM + HF_BATHRM + BEDRM + 
+                    AYB + LANDAREA, data = house.price)
+cat("\n[VIF without ROOMS, EYB, ]\n")
+print(vif(temp.model2))
+
+# drop ROOMS
+house.price <- subset(house.price, select = -c(ROOMS, EYB))
+```
+
+```{r}
+# final correaltion table
+numeric_cols <- names(select_if(house.price, is.numeric))
+corr <- cor(house.price[, numeric_cols])
+corrplot.mixed(corr, number.cex = .75, tl.pos = "lt")
+```
+
+
+### __Categorical Variables__
+
+```{r}
 categorical_cols <- names(house.price)[!names(house.price) %in% numeric_cols]
-categorical_cols <- c(categorical_cols)
+print(categorical_cols)
+```
+
+```{r}
+# number of unique values in each categorical variable
+str(apply(house.price[, categorical_cols], 2, function(x) unique(x)))
+```
+
+```{r}
+# fix '0' values in AC
+cat("Number of '0's in AC:", pull(count(house.price[house.price$AC == '0', ])))
+house.price[house.price$AC == '0', 'AC'] <- "N"
+```
+
+```{r}
+# drop geographical variables except for WARD
+house.price <- select(house.price, -c("ZIPCODE", "USECODE",
+                                      "ASSESSMENT_NBHD", "SQUARE", "QUADRANT"))
 ```
 
 
 ------
+
+## Plotting and Feature Selection
+
+### __Scatter Plot__
+
+```{r}
+house.price_scatter <- function(var, x_start, x_lim) {
+  ggplot(house.price, aes_string(var, "PRICE", fill = var)) +
+    geom_point(color = "darkgreen", shape = 1, alpha = 0.1, 
+               size = 0.2, position = "jitter") +
+    geom_smooth(span = 5) +
+    ggtitle(toString(var)) + xlab("") +
+    theme(legend.position="none") +
+    scale_x_continuous(limits = c(x_start, x_lim)) +
+    scale_y_continuous(limits = c(0, 1500000), 
+                       breaks = seq(0, 1500000, 250000))
+}
+```
+
+```{r warning=FALSE}
+BATHRM <- house.price_scatter("BATHRM", 0, 8)
+BEDRM <- house.price_scatter("BEDRM", 0, 8)
+LANDAREA <- house.price_scatter("LANDAREA", 100, 10000)
+AYB <- house.price_scatter("AYB", 1930, 2018)
+
+
+grid.arrange(BATHRM, BEDRM, LANDAREA, AYB,
+             ncol = 2, nrow = 2)
+```
+
+```{r}
+# linear model with room variables
+RM.lm <- lm(PRICE ~ BEDRM + BATHRM, data = house.price)
+
+# constant variance tests
+print(bptest(RM.lm))
+print(ncvTest(RM.lm))
+```
+
+```{r}
+# diagnostic plots
+par(mfrow = c(2, 2))
+plot(RM.lm)
+```
+
+```{r}
+# box-cox
+with(house.price, boxCox(PRICE ~ BEDRM, grid = T,
+                         lambda = seq(-2.0, 2.0, 0.25)))
+```
+
+```{r}
+house.price$PRICE_SQRT <- sqrt(house.price$PRICE)
+
+RM_SQRT.lm <- lm(PRICE_SQRT ~ BEDRM + BATHRM, data = house.price)
+par(mfrow = c(2, 2))
+plot(RM_SQRT.lm)
+```
+
+```{r}
+# final correlation
+print(findCorrel)
+```
+
+
+### __Box Plot: *Categorical Variables*__
+
+```{r}
+house.price_boxplot <- function(var) {
+  ggplot(house.price, aes_string(var, "PRICE", fill = var)) +
+    geom_boxplot(outlier.colour = "black", 
+                 outlier.shape = 16, 
+                 outlier.size = 1) +
+    ggtitle(toString(var)) + xlab("") +
+    theme(legend.position="none")
+}
+```
+
+```{r}
+AC <- house.price_boxplot("AC")
+QUALIFIED <- house.price_boxplot("QUALIFIED")
+SOURCE <- house.price_boxplot("SOURCE")
+RMDL <- house.price_boxplot("RMDL")
+WARD <- house.price_boxplot("WARD")
+
+lay <- rbind(c(1, 2),
+             c(3, 4),
+             c(5, 5))
+grid.arrange(grobs = list(AC, QUALIFIED, SOURCE, RMDL, WARD),
+             layout_matrix = lay)
+```
+
+
+------
+
+## Modeling and Analysis
+
+### __Linear Model__
+
+```{r}
+house.lm <- lm(PRICE_SQRT ~ BATHRM + HF_BATHRM + BEDRM + 
+                 AYB + CENSUS_TRACT +
+                 QUALIFIED + SOURCE + WARD,
+               data = house.price)
+
+summary(house.lm)
+```
+
+```{r}
+anova(house.lm)
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(house.lm)
+```
+
+```{r}
+# forward selection
+# house.lm <- regsubsets(PRICE_SQRT ~ BATHRM + HF_BATHRM + BEDRM + 
+#                          AYB + CENSUS_TRACT +
+#                          QUALIFIED + SOURCE + WARD, 
+#                        data = house.price, 
+#                        method = c("seqrep"))
+# 
+# lm_summary <- summary(house.lm)
+# lm_summary$adjr2
+```
+
+```{r}
+# stepwise selection
+house.step.lm <- stepAIC(house.lm, direction = "backward")
+summary(house.step.lm)
+```
+
+```{r}
+cv.lm(data = house.price, form.lm = house.lm, m = 3)
+```
+
+
+### __Residual Analysis__
+
+```{r}
+house.stdresi = rstandard(house.lm)
+plot(house.price$PRICE, house.stdresi)
+```
+
+------
+
+## Prediction with Adjusted Model
+
+```{r}
+# ridge regression
+
+```
+
+
+------
+
+## References
 
 [kable](https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html)
 [Mapping](http://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html#)
 [ggmap Github](https://github.com/dkahle/ggmap)
 [ggmap stamen](https://rdrr.io/cran/ggmap/man/get_stamenmap.html)
 [corrplot](https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html)
+[type of apply](https://www.guru99.com/r-apply-sapply-tapply.html)
+[Linear Regression Example](http://r-statistics.co/Linear-Regression.html)
+[Scatter Plot](http://www.cookbook-r.com/Graphs/Scatterplots_(ggplot2)/)
+[Outlier](https://www.r-bloggers.com/outlier-detection-and-treatment-with-r/)
+[Boxplot](http://www.sthda.com/english/wiki/ggplot2-box-plot-quick-start-guide-r-software-and-data-visualization)
+[VIF](http://www.scriptwarp.com/warppls/pubs/Kock_Lynn_2012.pdf)
+[leaps](https://rdrr.io/cran/leaps/man/regsubsets.html)
+[Diagnosis & Variable Selection](https://www.statmethods.net/stats/regression.html)
