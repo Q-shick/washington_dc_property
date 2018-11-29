@@ -33,6 +33,7 @@ library(lmtest)     # non-constant variance test
 library(MASS)       # AIC
 library(leaps)      # model selection
 library(DAAG)       # cross-validation
+library(glmnet)     # ridge regression
 
 select <- dplyr::select
 ```
@@ -271,28 +272,6 @@ corrplot.mixed(corr, number.cex = .75, tl.pos = "lt")
 ```
 
 
-### __Categorical Variables__
-
-```{r}
-categorical_cols <- names(house.price)[!names(house.price) %in% numeric_cols]
-print(categorical_cols)
-```
-
-```{r}
-# number of unique values in each categorical variable
-str(apply(house.price[, categorical_cols], 2, function(x) unique(x)))
-```
-
-```{r}
-# fix '0' values in AC
-cat("Number of '0's in AC:", pull(count(house.price[house.price$AC == '0', ])))
-house.price[house.price$AC == '0', 'AC'] <- "N"
-```
-
-
-------
-
-## Plotting and Feature Selection
 
 ### __Scatter Plot__
 
@@ -364,6 +343,7 @@ cat("Lambda for Transformation:", lambda)
 ```{r}
 # transformation to sqrt
 house.price$PRICE_TRANS <- sqrt(house.price$PRICE)
+house.price <- select(house.price, -PRICE)
 
 # price-sqrt histogram
 ggplot(house.price, aes(x = PRICE_TRANS)) + 
@@ -371,7 +351,6 @@ ggplot(house.price, aes(x = PRICE_TRANS)) +
                  binwidth = 20, fill = "blue", alpha = 0.25) +
   geom_density(fill = "pink", alpha = 0.25) +
   labs(title = "Washington D.C House Price SQRT") +
-  labs(x = "Price_sqrt", y = "Density") +
   theme(plot.title = element_text(hjust = 0.5)) +
   geom_vline(aes(xintercept = mean(PRICE_TRANS), color = "mean"), size = 0.5) +
   geom_vline(aes(xintercept = median(PRICE_TRANS), color = "median"),
@@ -384,11 +363,33 @@ ggplot(house.price, aes(x = PRICE_TRANS)) +
 ```
 
 ```{r}
-# final correlations with PRICE
-X_col <- names(select_if(house.price, is.numeric))
-X_col <- X_col[X_col != "PRICE_TRANS"]
-cat("[Price-Sqrt vs. X Variables Correlation]\n")
-print(cor(house.price[, X_col], house.price$PRICE_TRANS))
+# final correlations with PRICE_TRANS
+X_num <- names(select_if(house.price, is.numeric))
+X_num <- X_num[X_num != "PRICE_TRANS"]
+cat("[Price SQRT vs. X Variables Correlation]\n")
+kable(cor(house.price[, X_num], house.price$PRICE_TRANS)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+```
+
+
+------
+
+### __Categorical Variables__
+
+```{r}
+categorical_cols <- names(house.price)[!names(house.price) %in% numeric_cols]
+print(categorical_cols)
+```
+
+```{r}
+# number of unique values in each categorical variable
+str(apply(house.price[, categorical_cols], 2, function(x) unique(x)))
+```
+
+```{r}
+# fix '0' values in AC
+cat("Number of '0's in AC:", pull(count(house.price[house.price$AC == '0', ])))
+house.price[house.price$AC == '0', 'AC'] <- "N"
 ```
 
 
@@ -425,14 +426,15 @@ grid.arrange(grobs = list(house.price_boxplot("AC", 0),
 house.price[house.price$AC == '0', "AC"] <- 'Y'
 
 # drop HEAT
-# house.price <- select(house.price, -HEAT)
+print(summary(house.price$HEAT))
+house.price <- select(house.price, -HEAT)
 
 # reduce wards to three types
-# house.price$WARD <- ifelse(house.price$WARD %in% c('Ward 2', 'Ward 3'), 
+# house.price$WARD <- ifelse(house.price$WARD %in% c('Ward 2', 'Ward 3'),
 #                            'Ward 2/3', as.character(house.price$WARD))
-# house.price$WARD <- ifelse(house.price$WARD %in% c('Ward 7', 'Ward 8'), 
+# house.price$WARD <- ifelse(house.price$WARD %in% c('Ward 7', 'Ward 8'),
 #                            'Ward 7/8', as.character(house.price$WARD))
-# house.price$WARD <- ifelse(!house.price$WARD %in% c('Ward 2/3', 'Ward 7/8'), 
+# house.price$WARD <- ifelse(!house.price$WARD %in% c('Ward 2/3', 'Ward 7/8'),
 #                            'Ward 3/4/5/6', as.character(house.price$WARD))
 ```
 
@@ -444,7 +446,13 @@ grid.arrange(house.price_boxplot("STYLE", 90),
 
 ```{r}
 # Style is same as Story, Struct is ambiguous
-# house.price <- select(house.price, -c("STYLE", "STRUCT"))
+print(summary(house.price$STYLE))
+house.price <- select(house.price, -STYLE)
+
+print(summary(house.price$STRUCT))
+house.price$STRUCT <- ifelse(house.price$STRUCT %in%
+                          c("Multi", "Semi-Detached", "Town Inside"),
+                          "Cheap", "Expensive")
 ```
 
 ```{r}
@@ -455,20 +463,19 @@ grid.arrange(house.price_boxplot("CNDTN", 90),
 
 ```{r}
 # cat("[Grade counts]\n")
-# print(summary(house.price$GRADE))
 # cat("\n[Condition counts]\n")
-# print(summary(house.price$CNDTN))
-# 
-# # Grade: above-avg / avg / fair vs. rest
-# house.price$GRADE <- ifelse(house.price$GRADE %in% 
-#                         c("Above Average", "Average", "Fair Quality"), 
-#                         "Average", "High")
-# 
-# # Condition: avg / fair / poor vs. rest
-# house.price$CNDTN <- ifelse(house.price$CNDTN %in% 
-#                         c("Average", "Fair", "Poor"), "Bad", "Good")
-```
 
+# Grade: above-avg / avg / fair vs. rest
+print(summary(house.price$GRADE))
+# house.price$GRADE <- ifelse(house.price$GRADE %in%
+#                         c("Above Average", "Average", "Fair Quality"),
+#                         "Average", "High")
+
+# Condition: avg / fair / poor vs. rest -> try to take median to GRADE_MEDIAN_PRICE
+print(summary(house.price$CNDTN))
+house.price$CNDTN <- ifelse(house.price$CNDTN %in%
+                        c("Average", "Fair", "Poor"), "Bad", "Good")
+```
 
 ```{r}
 house.price_boxplot("EXTWALL", 90)
@@ -479,12 +486,11 @@ house.price_boxplot("EXTWALL", 90)
 
 ```{r}
 # cat("[Exterior wall counts]\n")
-# print(summary(house.price$EXTWALL))
-# 
-# house.price$EXTWALL <- ifelse(house.price$EXTWALL %in% 
-#                           c("Brick Veneer", "Brick/Stone", "Brick/Stucco", "Hardboard", 
-#                             "Stone", "Stone/Stucco", "Stucco Block", "Wood Siding"), 
-#                           "Premium", "Normal")
+print(summary(house.price$EXTWALL))
+house.price$EXTWALL <- ifelse(house.price$EXTWALL %in%
+                          c("Brick Veneer", "Brick/Stone", "Brick/Stucco", "Hardboard",
+                            "Stone", "Stone/Stucco", "Stucco Block", "Wood Siding"),
+                          "Premium", "Normal")
 ```
 
 ```{r}
@@ -495,69 +501,164 @@ grid.arrange(house.price_boxplot("INTWALL", 90),
 
 ```{r}
 # drop Interior
-
+print(summary(house.price$INTWALL))
+house.price <- select(house.price, -INTWALL)
 
 # Roof: cheap vs. expensive
 # cat("[Roof counts]\n")
-# print(summary(house.price$ROOF))
-# 
-# house.price$ROOF <- ifelse(house.price$ROOF %in% 
-#                           c("Clay Tile", "Neopren", "Slate"), 
-#                           "Expensive", "Cheap")
+print(summary(house.price$ROOF))
+house.price$ROOF <- ifelse(house.price$ROOF %in%
+                          c("Clay Tile", "Neopren", "Slate"),
+                          "Expensive", "Cheap")
 ```
 
 
 ------
 
-## Modeling and Analysis
 
-### __Linear Model__
+### Facet Plot
 
 ```{r}
-house.price <- select(house.price, -PRICE)
-house.lm <- lm(PRICE_TRANS ~ .,data = house.price)
+ggplot(house.price[!house.price$GRADE %in% 
+      c("Exceptional-A", "Exceptional-B", "Fair Quality"), ], 
+      aes(GBA, PRICE_TRANS, color = GRADE)) + 
+  geom_point(alpha = 0.05, shape = 1) + 
+  geom_smooth(method = lm) + 
+  facet_wrap(~GRADE) +
+  scale_x_continuous(limits = c(0, 4000), 
+                     breaks = seq(0, 4000, 2000))
+```
+
+```{r}
+GRADE_median <- house.price %>%
+  group_by(GRADE) %>%
+  summarise(MEDIAN_PRICE = median(PRICE_TRANS)) %>%
+  arrange(MEDIAN_PRICE)
+GRADE_median$MEDIAN_PRICE <- round(GRADE_median$MEDIAN_PRICE, digits = 2)
+
+kable(GRADE_median) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+```
+
+```{r}
+house.price$GRADE_MEDIAN_PRICE <- lapply(house.price$GRADE, function(x) 
+  GRADE_median[match(x, GRADE_median$GRADE), "MEDIAN_PRICE"][[1]])
+house.price$GRADE_MEDIAN_PRICE <- as.numeric(house.price$GRADE_MEDIAN_PRICE)
+house.price <- select(house.price, -GRADE)
+```
+
+
+------
+
+## Diagnostic Analysis
+
+
+### __Linear Model: *All Variables*__
+
+```{r}
+house.lm <- lm(PRICE_TRANS ~ ., data = house.price)
 summary(house.lm)
 ```
 
-```{r}
-anova(house.lm)
-```
 
+### __Diagnostic Plots and Influential Points__
 
 ```{r}
 plot(house.lm)
 ```
 
 ```{r}
-# influential observations
+# influential observations from Cook's Distance-Leverage
+X_y <- names(select_if(house.price, is.numeric))
 print(house.price[row.names(house.price) %in% 
-    c(21, 4550, 18569, 24841, 48266, 80226), c("ROOMS", "GBA", "PRICE_TRANS")])
+    c(21, 18569, 24841, 97202), c(X_y)])
 
 # drop influential observations
 house.price <- house.price[!row.names(house.price) %in%
-    c(21, 4550, 18569, 24841, 48266, 80226), ]
+    c(21, 18569, 24841, 97202), ]
 ```
 
 ```{r}
-ggplot(house.lm, aes(.resid)) + 
-  geom_density(fill = "pink", color = "red", alpha = 0.5) +
-  stat_function(fun = dnorm, args = list(mean = mean(resid(house.lm)), 
-                                         sd = sd(resid(house.lm))),
-                linetype = "dashed", geom = "area", alpha = 0.2) +
-  xlab("Price Square Root Residuals") + ylab("Density") +
-  ggtitle("Residual Plot")
+resid.plot <- function(model) {
+  ggplot(model, aes(.resid)) + 
+    geom_density(fill = "pink", color = "red", alpha = 0.5) +
+    stat_function(fun = dnorm, args = list(
+      mean = mean(resid(model)), sd = sd(resid(model))),
+      linetype = "dashed", geom = "area", alpha = 0.2) +
+    xlab("Price Square Root Residuals") + ylab("Density") +
+    ggtitle("Residual Plot") +
+    scale_x_continuous(limits = c(-500, 500)) +
+    coord_fixed(ratio = 1e5)
+}
+
+resid.plot(house.lm)
+```
+
+
+### __Handle Influential Points: *DFBETA*__
+
+```{r}
+# DFBETA
+dfbeta.ROOMS <- dfbetaPlots(house.lm, terms = "ROOMS")
+dfbeta.STORIES <- dfbetaPlots(house.lm, terms = "STORIES")
+dfbeta.GBA <- dfbetaPlots(house.lm, terms = "GBA")
 ```
 
 ```{r}
-# forward selection
-# house.lm <- regsubsets(PRICE_TRANS ~ BATHRM + HF_BATHRM + BEDRM + 
-#                          AYB + CENSUS_TRACT +
-#                          QUALIFIED + SOURCE + WARD, 
-#                        data = house.price, 
-#                        method = c("seqrep"))
-# 
-# lm_summary <- summary(house.lm)
-# lm_summary$adjr2
+# calculate dfbetas for selected variables
+dfbeta.thrhd <- as.numeric(sqrt(4/count(house.price)))
+dfbetas <- dfbetas(house.lm)
+
+# filter influential observations
+dfbetas.infl.obs <- names(dfbetas[abs(dfbetas[ , "ROOMS"]) 
+                                  > dfbeta.thrhd, "ROOMS"])
+dfbetas.infl.obs <- c(dfbetas.infl.obs, 
+                      names(dfbetas[abs(dfbetas[ , "STORIES"]) 
+                                  > dfbeta.thrhd, "STORIES"]))
+
+house.price <- house.price[!row.names(house.price) %in% dfbetas.infl.obs, ]
+```
+
+```{r}
+house.infl.lm <- lm(PRICE_TRANS ~., data = house.price)
+summary(house.infl.lm)
+```
+
+
+### __Final Linear Model__
+
+```{r}
+# drop insignificant regressors
+house.price <- select(house.price, -c("ROOMS", "EXTWALL"))
+
+# regression with significant variables
+house.final.lm <- lm(PRICE_TRANS ~ ., data = house.price)
+summary(house.final.lm)
+```
+
+```{r}
+grid.arrange(resid.plot(house.lm) + ggtitle("Original Residuals"),
+             resid.plot(house.infl.lm) + ggtitle("After Removing Influential Points"),
+             ncol = 2)
+```
+
+
+## Feature Selection for Best Model
+
+
+### __Adjusted R-Square__
+
+```{r}
+temp<-lm(PRICE_TRANS ~ EYB+GBA+STRUCT+ROOF+RMDL+AC+WARD, data=house.price)
+summary(temp)
+```
+
+
+```{r}
+rsq.lm <- regsubsets(PRICE_TRANS ~ ., data = house.price, nbest = 3)
+plot(rsq.lm, scale = "r2")
+plot(rsq.lm, scale = "adjr2")
+plot(rsq.lm, scale = "Cp")
 ```
 
 ```{r}
@@ -568,24 +669,43 @@ ggplot(house.lm, aes(.resid)) +
 
 ```{r}
 # cross validation
-# cv.lm(data = house.price, form.lm = house.lm, m = 3)
+# cv.lm(df = house.price, house.final.lm, m = 3)
 ```
 
 
-### __Residual Analysis__
+### __AIC__
 
 ```{r}
-# house.stdresi = rstandard(house.lm)
-# plot(house.price$PRICE, house.stdresi)
+# null model for variable addition
+null.lm <- lm(PRICE_TRANS ~ 1, data = house.price)
+full.lm <- lm(PRICE_TRANS ~ ., data = house.price)
+
+# forward selection
+step(null.lm, scope = list(lower = null.lm, upper = full.lm), direction = "forward")
+```
+
+```{r}
+# stepwise selection
+step(null.lm, scope = list(lower = null.lm, upper = full.lm), direction = "both")
+```
+
+
+### __Advanced Method: *Ridge Regression*__
+
+```{r}
+# ridge regression
+x <- house.price %>% select(-PRICE_TRANS) %>% data.matrix()
+y <- house.price$PRICE_TRANS
+
 ```
 
 
 ------
 
-## Prediction with Adjusted Model
+
+## Prediction
 
 ```{r}
-# ridge regression
 
 ```
 
