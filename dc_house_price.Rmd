@@ -6,41 +6,38 @@ output:
 ---
 
 ## Overview
+House price is considered to be difficult to predict as there are so many variables in the market. However, we can guess the price with a series of major factors such as size, area, quality and so on. Although they would rather be a factrue of numerous factors existing, these quantitative and qualitative variables are useful to narrow down the price in a certain range which is incomparably better than just mean or median. In the course of this project, we first analyze the observations to get some insight for modeling as well as to filter some data like influential points. Once a linear model is sought, we need to evaluate it with techniques like residual analysis to possibly remove insignificant features. Lastly, we build a predictive model and measure its performance with RMSE.
 
-1. Purpose
-2. Dataset
-3. Methodology
-4. Modelling
+
+> * [Preparation](#preparation)
+>     - Dataset 
+>     - Rows of Interest 
+>     - Dependent Variable 
+>     - Outliers 
+>     - Drop Variables
+> * [Data Analysis](#data analysis)
+>     - Correlation Matrix 
+>     - Transformation 
+>     - Box Plot 
+>     - Facet Plot
+> * [Diagnostic Analysis](#diagnostic analysis)
+>     - Plots and Influential Points 
+>     - Remove Influential Points 
+> * [Best Model](#best model)
+>     - Adjusted R-squared 
+>     - AIC
+> * [Prediction](#prediction)
+>     - Root Mean Square Error
+> * [Conclusion](#conclusion)
+> * [Reference](#reference)
+
 
 ------
 
-* [Preparation](#preparation)
-  - Dataset 
-  - Rows of Interest 
-  - Dependent Variable 
-  - Outliers 
-  - Drop Variables
-* [Data Analysis](#data analysis)
-  - Correlation Matrix 
-  - Transformation 
-  - Box Plot 
-  - Facet Plot
-* [Diagnostic Analysis](#diagnostic analysis)
-  - Plots and Influential Points 
-  - Remove Influential Points 
-* [Best Model](#best model)
-  - Adjusted R-squared 
-  - AIC
-* [Prediction](#prediction)
-  - Root Mean Square Error
-* [Conclusion](#conclusion)
-* [Reference](#reference)
-
+\  
 
 ## Preparation
-
-The data set used for this project is [D.C. Residential Properties](https://www.kaggle.com/christophercorrea/dc-residential-properties) which is refined from the original source on [D.C. Open Data](http://opendata.dc.gov/), and details of the columns can be found on [Metadata](https://www.arcgis.com/sharing/rest/content/items/c5fb3fbe4c694a59a6eef7bf5f8bc49a/info/metadata/metadata.xml?format=default&output=html). Before analyzing the data, each column needs to be examined to determine whether to include it in a model, also to find outliers that could have a negative influence on modeling. This process starts with calling the following libraries required.
-
+The data set used for this project is [D.C. Residential Properties](https://www.kaggle.com/christophercorrea/dc-residential-properties) which is refined from the original source on [D.C. Open Data](http://opendata.dc.gov/), and details of the columns can be found on [Metadata](https://www.arcgis.com/sharing/rest/content/items/c5fb3fbe4c694a59a6eef7bf5f8bc49a/info/metadata/metadata.xml?format=default&output=html) page. Before analyzing the data, each column needs to be examined to determine whether to include it in a model, also to find outliers that could have a negative influence on modeling. This process starts with calling the following libraries required.
 ```{r warning=FALSE, message=FALSE}
 library(dplyr)      # df manipulation
 library(ggplot2)    # graphical plot
@@ -51,24 +48,22 @@ library(knitr)      # pretty print
 library(kableExtra) # print styling
 library(stringr)    # handle strings
 library(ggmap)      # geographical map
-# library(bitops)     # bitwise operation
 library(corrplot)   # correlation matrix
 library(car)        # VIF
 library(caret)      # data set split
 library(lmtest)     # non-constant variance test
-# library(olsrr)      # functions for OLS
 library(MASS)       # AIC
 library(leaps)      # model selection
 library(faraway)    # max adjusted r
 library(DAAG)       # cross-validation
-# library(glmnet)     # ridge regression
 
 select <- dplyr::select
 ```
 
+\  
 
 ### __Dataset Overview__
-The next step is read the data set and take a look at the structure. This step focuses on having an overall idea what the columns are. Columns with redundant information, ID columns, or empty columns can be found and dropped. Also, such data type is checked that some of them could be converted to a proper type. 
+The next step is reading the data set and taking a look at the structure. This step focuses on having an overall idea what the columns are. Columns with redundant information, ID columns, or empty columns can be found and dropped. Also, such data type is checked that some of them could be converted to a proper type. 
 ```{r}
 # read the dataset
 house.price <- read.csv('DC_Properties.csv', na.strings = c("", "NA"))
@@ -82,9 +77,7 @@ str(house.price)
 ```{r}
 # drop ID, single value, redundant columns
 house.price <- select(house.price, -c("X.1", "CITY", "STATE", "X", "Y"))
-```
 
-```{r}
 # ZIPCODE, USECODE are more of categorical data
 house.price$ZIPCODE <- as.factor(house.price$ZIPCODE)
 house.price$USECODE <- as.factor(house.price$USECODE)
@@ -98,23 +91,22 @@ kable(head(house.price, n = 10)) %>%
   scroll_box(width = "100%", height = "500px")
 ```
 
+\  
 
 ### __Preprocessing: *Rows of Interest*__
-By the nature of the data set, there are so many external factors. There are two types of properties in the data set, and they have such a distinctive pattern that separate studies should be done. At this time, the study narrows down to 'Residential' type which is majority of observations. Another factor that can't be controlled is that house values fluctuate with time. In addition, prices might need some correction to today's values, which could be very challenging but possibly only make it complicated. For that reason, it limits to the recent two years data for the goal to analyze the *latest* and *general* trend.
+There are two types of properties in the data set, and they have such a distinctive pattern that separate studies need to be done. At this time, the study focuses on 'Residential' type which is majority of observations. Some factor that can't be controlled is that house values fluctuate with time. In addition, prices might need some correction to today's values, which could be very challenging but possibly only to make it more complicated. For that reason, the cases limits to the recent two years data for the goal to analyze the *latest* and *general* trend.
 ```{r}
-# difference between 'Residential' and 'Condo'
-cat("[Residential PRICE Summary]\n")
+# residential price
 print(summary(house.price[house.price$SOURCE == "Residential", 'PRICE']))
-cat("\n[Condominium PRICE Summary]\n")
+# condominium price
 print(summary(house.price[house.price$SOURCE == "Condominium", 'PRICE']))
 ```
 
 ```{r}
 # reduce it to 'Residential' type
 house.price <- house.price[house.price$SOURCE == "Residential", ]
-```
 
-```{r}
+# cases density histogram by sale date
 house.price$SALEDATE <- substr(house.price$SALEDATE, 0, 10)
 house.price$SALEDATE <- as.Date(house.price$SALEDATE)
 
@@ -125,7 +117,7 @@ hist(sale.year,
      xlim = c(1990, 2018),
      main = "Sales by Year",
      xlab = "Year",
-     border = 'blue', col = 'green',
+     border = 'blue', col = 'green', alpha = 0.5,
      prob = T)
 axis(side = 1, at = c(2015, 2018))
 lines(density(sale.year), col = 'red')
@@ -142,15 +134,14 @@ quantile(sale.year, probs = seq(0, 1, 0.1))
 house.price <- subset(house.price, SALEDATE > as.Date("2015-12-31"))
 ```
 
+\  
 
 ### __Dependent Variable: *Price*__
-It would be reasonable to investigate house prices as these are what to be analyzed and predicted. Looking into the dependent variable would help with having an idea for independent variables too since the goal is to define their relationship.
-```{r}
+It would be reasonable to investigate house prices as these are the targets to be analyzed and predicted. Looking into the dependent variable would help with having an idea for independent variables too since the goal is to define their relationships. The following histogram gives a basic idea how prices are distributed.
+```{r warning=FALSE}
 # drop rows with price as NA
 house.price <- house.price[complete.cases(house.price[ , "PRICE"]), ]
-```
 
-```{r warning=FALSE}
 # histogram independent variable "Price"
 ggplot(house.price, aes(x = PRICE)) + 
   geom_histogram(binwidth = 20000,
@@ -167,12 +158,12 @@ ggplot(house.price, aes(x = PRICE)) +
   scale_color_manual(name = "", values = c(mean = "pink", median = "green"))
 ```
 
-From both the shape and statistics, house price data are skewed. Most of the houses are in a certain range with a few expensive houses. However, transformation might be carefully considered, not just with the histogram.
-
+From both the shape and statistics, house price data are skewed. Most of the houses are in a certain range with a few expensive houses. However, transformation might be carefully considered, asking for more evidence than just histogram. Again, the following statistics shows that prices are skewed with extremely large values, even if /$10 does not make sense either. In addition, it would be very difficult to buy a house in Washington D.C. from the median price.
 ```{r}
 summary(house.price$PRICE)
 ```
 
+\  
 
 ### __On the Map__
 One of the best ways to have a sense of data is visualization. Since the data could be fundamentally geographic, it would be a good attemp to visualize prices on the Washington D.C. map. On the map, the darker dots are the more expensive.
@@ -200,11 +191,13 @@ ggmap(dc_map) +
                      labels = price_label)
 ```
 
-The areas with no dots are mostly hills or other types where a house can't be build on. Certainly, there are some expensive areas and the other way around. Washington D.C. is consisted of 8 wards of which ward 2 and 3 are where dots are darker while the rest are brighter. But ward 6 in the middle is a bit ambiguous to tell because its left is dark but the right is not. Ward is actually one of the columns so it will be studied by each ward.
+The areas with no dots are mostly hills or other types where houses can't be build on. Certainly, there are some expensive areas and some cheaper areas. Washington D.C. is consisted of [8 wards](https://www.google.com/imgres?imgurl=https://planning.dc.gov/sites/default/files/dc/sites/op/page_content/images/wards_small.png&imgrefurl=https://planning.dc.gov/page/neighborhood-planning-01&h=400&w=328&tbnid=vgqfxqYTZrngZM:&q=dc+wards&tbnh=160&tbnw=130&usg=AI4_-kQ_Fjd1w9f6GPhDXm-kpkWbaibCEw&vet=12ahUKEwjZgMLfjInfAhVGs6wKHYdICWUQ9QEwAHoECAoQBg..i&docid=5swXqI-O8oONaM&sa=X&ved=2ahUKEwjZgMLfjInfAhVGs6wKHYdICWUQ9QEwAHoECAoQBg) of which ward 2 and 3 are where dots are darker while the rest are brighter. But ward 6 in the middle is a bit ambiguous to tell because its left is dark but the right is not. Ward is actually one of the columns so it will be studied by each ward.
 
+\  
 
 ### __Handle Outliers__
-As shown on the histogram, there are a series of very expensive houses. These probably would interfere with modeling, thus, must be handled before moving forward. Outliers here are defined as observations over or less than $Interquantile\ Range\times1.5$. The lower cut-off, however, is negative leaving only the expensive houses as outliers.
+As shown on the histogram, there are a series of very expensive houses. These probably would interfere with modeling, thus, must be handled before moving forward. Outliers here are defined as observations over or less than IQR*1.5. The lower cut-off, however, is negative leaving only the expensive houses as outliers.
+$$Interquantile\ Range\ (IQR)=Quantile\ 1-\ Quantile\ 2$$
 ```{r}
 lowerq <- quantile(house.price$PRICE)[2]
 upperq <- quantile(house.price$PRICE)[4]
@@ -220,6 +213,7 @@ cat("Lower Outlier Threshold:", lower.threshold,
 house.price <- house.price[house.price$PRICE < upper.threshold, ]
 ```
 
+\  
 
 ### __Preprocessing: *Drop Variables*__
 As explained, some variables do not have meaningful or unique information. Although a variable has its own information, it could still be not useful if some other variable can replace it or have better information. The data set has so many geographical data which come in different forms but have a common ground. Before taking care of that, *NA* values should be controlled.
@@ -240,7 +234,7 @@ na_count <- na_count[na_count != 0]
 print(na_count)
 ```
 
-"LIVING GBA" and "CMPLX NUM" are completely empty, suggesting that they are typical data of condominiums which are excluded at the beggining. Therefore, these two should simply be dropped. "YR RMDL" have about one third empty and this must be because not all the houses have been remodeled. While dropping is not the best, the solution for this would be type conversion so that it is either a yes or a no as to whether remodeled or not. The rest are mostly geographical columns. While neighborhood is accepted as a good indicator for house prices, there are 57 different of them to make too many levels. As the final model will be a linear model, having too many category is susceptible to overfitting and losing general trends. Most importantly ward seems to be very useful as confirmed on the map.
+"LIVING GBA" and "CMPLX NUM" are completely empty, suggesting that they are typical data of condominiums which are excluded at the beggining. Therefore, these two should simply be dropped. "YR RMDL" have about one third empty and this must be because not all the houses have been remodeled. While dropping is not always the best, the solution for this would be type conversion so that it is either a *yes* or a *no* as to whether remodeled or not. The rest are mostly geographical columns. While neighborhood is accepted as a good indicator for house prices, there are 57 different of them to make too many levels. As the final model will be a linear model, having too many category is susceptible to overfitting and losing general trends. Most importantly ward seems to be very useful as confirmed on the map.
 
 ```{r}
 # drop empty variables
@@ -260,7 +254,6 @@ house.price <- select(house.price, -c("ZIPCODE", "USECODE", "SQUARE", "NATIONALG
 
 ```{r}
 # fine tuning
-cat("GIS values:")
 print(levels(house.price$GIS_LAST_MOD_DTTM))
 house.price <- select(house.price, -c("GIS_LAST_MOD_DTTM", "YR_RMDL"))
 
@@ -271,8 +264,10 @@ house.price <- house.price[complete.cases(house.price), ]
 
 ------
 
+\  
+
 ## __Data Analysis__
-This part pays attention to relationships among variables. Separate analysis will be conducted by data type, numerical and categorical, and then another for both of them together. For numerical types, correlation matrix will be drawn not only to find relationship with dependent variable but also to catch multicollinearity patterns. For categorical types, box plots will be used to see whether each category has an ability to divide house prices and what values are useful if so. Box plot also can help to decide whether to reduce number of values in a category.
+This part concentrates on relationships among variables. Separate analysis will be conducted by data type, numerical and categorical, and then another for both of them together. For numerical types, correlation matrix will be drawn not only to find relationship with dependent variable but also to catch multicollinearity patterns. For categorical types, box plots will be used to see whether each category has an ability to divide house prices and what values are useful if so. Box plot also can help to decide whether to reduce number of values in a category.
 
 ### __Correlation Matrix__
 
@@ -286,22 +281,23 @@ corr <- cor(house.price[, numeric_cols])
 corrplot.mixed(corr, number.cex = .75, tl.pos = "lt")
 ```
 
-"SALE NUM" and some others have no relationship with any others, thus, they can be easily gone. "PRICE" has a decent relationship with the rest, especially with "GBA" and room-related variables. However, there are multicollinearity issues such as "NUM UNITS" and "KITCHENS". These should be handled first, and then another matrix should be drawn.
+"SALE NUM" has no relationship with any others, thus, it can be easily gone. "NUM UNITS" and "KITCHENS" have relationships with some variables but amlost none with "PRICE". Our target "PRICE" has a decent relationship with the rest, especially with "GBA" and room-related variables. However, there are multicollinearity issues such as "ROOMS" and "BEDRM". These should be handled first, and then another matrix should be drawn.
 
 ```{r}
 # drop unrelated variables
 house.price <- subset(house.price, select = -c(SALE_NUM, BLDG_NUM, NUM_UNITS, 
                                                KITCHENS, LANDAREA))
-```
 
-```{r}
 # test for multicollinearity of numerical variables
 VIF.model <- lm(PRICE ~ BATHRM + HF_BATHRM + ROOMS + BEDRM + 
                   AYB + EYB + STORIES + GBA + FIREPLACES, 
                 data = house.price)
-cat("[VIF with All]\n")
 print(vif(VIF.model))
 ```
+
+Variance inflation factor (VIF) measures if variables are causing multicollinearity problems. Usually, VIF equals to 5 up to 10 is the limit which variables should not go over. Since we don't see such a variable, we can keep them and draw another correlation matrix.
+
+$$VIF_i=\frac{1}{1-R_i^2}$$
 
 ```{r}
 # final correaltion table
@@ -310,12 +306,14 @@ corr <- cor(house.price[, numeric_cols])
 corrplot.mixed(corr, number.cex = .75, tl.pos = "lt")
 ```
 
-There are still multicollinearity problems, but these are under the serious level and will be handled again during modeling. Again, house prices seem to have high correlations with area-related variables, which comes no surprise. Still, quality factors such as year built or fire place would mildly affect house prices. Although there are higher numbers on the matrix, "PRICE" has some relationships uniformly with the variables when the same can't be applied to other variables.
+Even though there are still moderate multicollinearity issues, these are under the serious level and will be handled again during modeling. Again, house prices seem to have high correlations with area-related variables, which comes no surprise. Still, quality-related factors such as year built or fire place would mildly affect house prices. Although there are higher numbers on the matrix, "PRICE" has some relationships uniformly with the variables when the same can't be applied to other variables.
 
+\  
 
 ### __Scatter Plot__
-Scatter plot is basic to find a pattern between two numerical variables. Either going up or down, a slope means a relationship. When units are too different among variables, normalization could be considered or it might mislead interpretation if they are put together. Variables related with rooms are in the similar range, therefore, they are put together first. Next, variables related with years and the rest are drawn on the same pane.
+Scatter plot is basic to find a pattern between two numerical variables. Either going up or down, a slope means a relationship. When units are so different among variables, normalization could be considered or it might mislead interpretation if they are put together. Another way to deal with this is to show similar variables together instead of the complicated normalization process. Variables related with rooms are in the similar range, therefore, they are put together first. Next, variables related with years and the rest are drawn on the same pane.
 ```{r}
+# define a function for repeating uses
 house.price_scatter <- function(var, x_start, x_lim) {
   ggplot(house.price, aes_string(var, "PRICE", fill = var)) +
     geom_point(color = "darkgreen", shape = 1, alpha = 0.1, 
@@ -330,6 +328,7 @@ house.price_scatter <- function(var, x_start, x_lim) {
 ```
 
 ```{r warning=FALSE}
+# room-related variables
 BATHRM <- house.price_scatter("BATHRM", 0, 8)
 HF_BATHRM <- house.price_scatter("HF_BATHRM", 0, 4)
 BEDRM <- house.price_scatter("BEDRM", 0, 8)
@@ -339,9 +338,10 @@ grid.arrange(BATHRM, HF_BATHRM, BEDRM, ROOMS,
              ncol = 2, nrow = 2)
 ```
 
-It seems like there is a strong pattern going up. It is very natural that a house price increases as it has more rooms. One surprising thing is that number of bathrooms has a sharper slope than number of bedrooms. Indeed, it is often seen that a 2-bedroom/2-bathroom house is more expensive than a 3-bedroom/1-bathroom house. Another thing to note is that it seems like prices become variable more widely as there are more rooms. For example, the price range of 3 to 4 rooms is much smaller than the price range of 7 to 8 rooms. Since room variables will play a significant role, [heteroscedasticity](http://www.statsmakemecry.com/smmctheblog/confusing-stats-terms-explained-heteroscedasticity-heteroske.html) is expected to happen, and this will be cared later.
+It seems like there is a strong pattern going up for them. It is very natural that a house price increases as it has more rooms. One surprising thing is that number of bathrooms has a sharper slope than number of bedrooms. Indeed, it is often seen that a 2-bedroom/2-bathroom house is more expensive than a 3-bedroom/1-bathroom house. Another thing to note is that it seems like prices become variable more widely as there are more rooms. For example, the price range of 3 to 4 rooms is much smaller than the price range of 7 to 8 rooms. Since room variables will play a significant role, [heteroscedasticity](http://www.statsmakemecry.com/smmctheblog/confusing-stats-terms-explained-heteroscedasticity-heteroske.html) is expected to happen, and this will be cared later.
 
 ```{r warning=FALSE, message=FALSE}
+# year-related and quality variables
 AYB <- house.price_scatter("AYB", 1930, 2020)
 EYB <- house.price_scatter("EYB", 1930, 2020)
 STORIES <- house.price_scatter("STORIES", 0, 10)
@@ -355,8 +355,10 @@ grid.arrange(AYB, EYB, STORIES, FIREPLACES,
 Variables related with years show a rough pattern. "EYB" has some slope which is affected by data after 2000. These are what must be heavily affected by contingent market trends, not by typical features. Although "STORIES" has a good sharp slope, they are mostly 2 to 3 stories with large variances. "FIREPLACE" has a decent movement within 0 to 1 range.
 
 ```{r warning=FALSE, message=FALSE}
+# GBA showing growing variances
 ggplot(house.price, aes(x = GBA, y = PRICE)) +
-  geom_point(alpha = 0.1) + 
+  geom_point(color = "darkgreen", 
+             shape = 1, alpha = 0.3, size = 0.5) + 
   geom_smooth() +
   ggtitle("GBA") + xlab("") +
   scale_x_continuous(limits = c(0, 6000),
@@ -365,8 +367,9 @@ ggplot(house.price, aes(x = GBA, y = PRICE)) +
                      breaks = seq(0, 1750000, 250000))
 ```
 
-"GBA" has totally different unit, square feet, so is drawn solely. Also, this appeals the heteroscedasticity issue very clearly. As a house gets bigger, its price could be in any range. This can be understood that houses with 1-bedroom, for instance, should be in a small price range because a new house in downtown is still just 1-bedroom. But houses with 4-bedroom could be over million dollars or an old out-of-maintenance house on auction.
+"GBA" appeals the heteroscedasticity issue very clearly. As a house gets bigger, its price could be in any range. This can be understood that houses with 1-bedroom, for instance, should be in a small price range because a new house in downtown is still just 1-bedroom. But houses with 4-bedroom could be over million dollars or an old out-of-maintenance house on auction.
 
+\  
 
 ### __Transformation: *Box-Cox*__
 Now that the variance issue is found, it is time to fix it. For the last check, Breusch-Pagan test can be conducted on a linear model. The test runs with null hypothesis that the variances are uniform over values. As seen below, the results are enough to reject the null hypothesis and claim the variance issues.
@@ -390,8 +393,6 @@ lambda <- bc$x[which.max(bc$y)]
 cat("Lambda for Transformation:", lambda)
 ```
 
-After transformation, the distribution becomes better than the initial one. The dotted line is the normal curve for comparison. Despite being not perfectly matched, at least the skewness is fixed as the mean median are aligned.
-
 ```{r}
 # transformation to sqrt
 house.price$PRICE_TRANS <- sqrt(house.price$PRICE)
@@ -414,7 +415,7 @@ ggplot(house.price, aes(x = PRICE_TRANS)) +
     linetype = "dashed")
 ```
 
-Although the correlations decreased a bit, it is more important to abide by the assumption of variance and normality, thus, the transformation is necessary.
+After transformation, the distribution becomes better than the initial one. The dotted line is the normal curve for comparison. Despite being not perfectly matched, at least the skewness is fixed as the mean median are aligned.
 
 ```{r}
 # final correlations with PRICE_TRANS
@@ -425,8 +426,11 @@ kable(cor(house.price[, X_num], house.price$PRICE_TRANS)) %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
 ```
 
+Although the correlations decreased a bit, it is more important to abide by the assumption of variance and normality, thus, the transformation is necessary.
 
 ------
+
+\  
 
 ### __Box Plot__
 Box plot is helpful to see if a categorical variable can divide dependent variables into groups. The data set has several categorical variables from building materials, functions, quality, to area. Some has too many different values available, some has unbalanced values, and another has its own issue. The following is general remedy for these kind of problems, some of which will be used for the project.
@@ -454,6 +458,7 @@ house.price[house.price$AC == '0', 'AC'] <- "N"
 ```
 
 ```{r}
+# define a function for repeated uses
 house.price_boxplot <- function(var, x.angle) {
   ggplot(house.price, aes_string(var, "PRICE_TRANS", fill = var)) +
     geom_boxplot(outlier.colour = "black", 
@@ -468,6 +473,7 @@ house.price_boxplot <- function(var, x.angle) {
 ```
 
 ```{r}
+# air conditioning, remodeld, qualified, heating, ward
 lay <- rbind(c(1, 2, 3),
              c(4, 4, 5))
 grid.arrange(grobs = list(house.price_boxplot("AC", 0), 
@@ -479,20 +485,12 @@ grid.arrange(grobs = list(house.price_boxplot("AC", 0),
              layout_matrix = lay)
 ```
 
-"AC", "RMDL", and "QUALIFIED" have two classes. Among them, "QUALIFIED" seems to do the best job to divide expensive houses and cheap houses, of course, qualified houses value more and the same goes for remodeled houses with air conditioner equipped. "HEAT" is a bit confusing in that most of values are around the median price (dotted line). Though there are some values "Air Exchng" or "Evp Cool", their counts do not seem to be enough to make a contribution. For that reason, "HEAT" should rather be dropped. "WARD" looks like it will be beneficial as each ward are ranged properly and located differently. Some issue here is that they have many outliers and ward 7 and 8 are almost identical. Nonetheless, this looks good enough useful when working with numerical variables.
+"AC", "RMDL", and "QUALIFIED" have two classes. Among them, "QUALIFIED" seems to do a good job to divide expensive houses and cheap houses, of course, qualified houses value more and the same goes for remodeled houses with air conditioner equipped. "HEAT" is a bit confusing in that most of values are around the median price (dotted line). Though there are some values "Air Exchng" or "Evp Cool", their counts do not seem to be enough to make a contribution. For that reason, "HEAT" should rather be dropped. "WARD" looks like it will be very beneficial as each ward are ranged properly and located differently. Some issue here is that they have many outliers and ward 7 and 8 are almost identical. Nonetheless, this looks good enough useful when working with numerical variables.
 
 ```{r}
 # drop HEAT
 print(summary(house.price$HEAT))
 house.price <- select(house.price, -HEAT)
-
-# reduce wards to three types
-# house.price$WARD <- ifelse(house.price$WARD %in% c('Ward 2', 'Ward 3'),
-#                            'Ward 2/3', as.character(house.price$WARD))
-# house.price$WARD <- ifelse(house.price$WARD %in% c('Ward 7', 'Ward 8'),
-#                            'Ward 7/8', as.character(house.price$WARD))
-# house.price$WARD <- ifelse(!house.price$WARD %in% c('Ward 2/3', 'Ward 7/8'),
-#                            'Ward 3/4/5/6', as.character(house.price$WARD))
 ```
 
 ```{r}
@@ -504,10 +502,13 @@ grid.arrange(house.price_boxplot("STYLE", 90),
 The values in "STYLE" are basically stories. Since "STORIES" variable already exists, this can be removed. Also, almost all of them (9557 count) are "2 Story" making it severely unbalanced. "STRUCT" looks like it could do some job to find cheap houses by the value "Multi" or "Semi-Detached".
 
 ```{r}
-# Style is same as Story, Struct is ambiguous
+# style
 print(summary(house.price$STYLE))
 house.price <- select(house.price, -STYLE)
+```
 
+```{r}
+# struct
 print(summary(house.price$STRUCT))
 house.price$STRUCT <- ifelse(house.price$STRUCT %in%
                           c("Multi", "Semi-Detached", "Town Inside"),
@@ -515,6 +516,7 @@ house.price$STRUCT <- ifelse(house.price$STRUCT %in%
 ```
 
 ```{r}
+# condition, grade
 grid.arrange(house.price_boxplot("CNDTN", 90),
              house.price_boxplot("GRADE", 90), 
              ncol = 2)
@@ -523,40 +525,35 @@ grid.arrange(house.price_boxplot("CNDTN", 90),
 "CDNTN" and "GRADE" show a similar pattern that average or fair houses are cheaper. These houses are under the median line and the rest are above very clearly. So, these several values can be grouped into two. This way, the values in "CDNTN" become balanced too. The values in "GRADE", however, are not quite two group dividable as there are unignorable discrepancies among similair values. This will be further investigated.
 
 ```{r}
-# cat("[Grade counts]\n")
-# cat("\n[Condition counts]\n")
-
-# Grade: above-avg / avg / fair vs. rest
+# grade
 print(summary(house.price$GRADE))
-# house.price$GRADE <- ifelse(house.price$GRADE %in%
-#                         c("Above Average", "Average", "Fair Quality"),
-#                         "Average", "High")
+```
 
-# Condition: avg / fair / poor vs. rest -> try to take median to GRADE_MEDIAN_PRICE
+```{r}
+# condition
 print(summary(house.price$CNDTN))
 house.price$CNDTN <- ifelse(house.price$CNDTN %in%
                         c("Average", "Fair", "Poor"), "Bad", "Good")
 ```
 
 ```{r}
+# exwall
 house.price_boxplot("EXTWALL", 90)
 ```
 
-There are just too many values in "EXTWALL", thus, it is inevitable to group them. With some extra research about exterior materials, they can be grouped into "Premium" or "Normal".
-
-[brick vs. wood](http://www.massrealty.com/articles/brick-homes-vs-wood-homes)
-[stucco](https://en.wikipedia.org/wiki/Stucco)
+There are just too many values in "EXTWALL", thus, it is inevitable to group them. With some extra research about exterior materials, they can be grouped into "Premium" or "Normal". Generally, [Brick](http://www.massrealty.com/articles/brick-homes-vs-wood-homes) and [Stucco](https://en.wikipedia.org/wiki/Stucco) are considered as relatively better materials.
 
 ```{r}
-# cat("[Exterior wall counts]\n")
+# exterior wall
 print(summary(house.price$EXTWALL))
 house.price$EXTWALL <- ifelse(house.price$EXTWALL %in%
                           c("Brick Veneer", "Brick/Stone", "Brick/Stucco", "Hardboard",
                             "Stone", "Stone/Stucco", "Stucco Block", "Wood Siding"),
-                          "Premium", "Normal")
+                            "Premium", "Normal")
 ```
 
 ```{r}
+# interior wall
 grid.arrange(house.price_boxplot("INTWALL", 90), 
              house.price_boxplot("ROOF", 90), 
              ncol = 2)
@@ -568,19 +565,22 @@ grid.arrange(house.price_boxplot("INTWALL", 90),
 # drop Interior
 print(summary(house.price$INTWALL))
 house.price <- select(house.price, -INTWALL)
+```
 
+```{r}
 # Roof: cheap vs. expensive
-# cat("[Roof counts]\n")
 print(summary(house.price$ROOF))
 house.price$ROOF <- ifelse(house.price$ROOF %in%
                           c("Clay Tile", "Metal- Cpr", "Neopren", "Slate"),
                           "Expensive", "Cheap")
 ```
 
+\  
 
 ### Facet Plot
-Facet plot usually needs two numerical variables and a categorical variable. While "CDNTN" are now divided into two groups, it wouldn't be a good idea to do the same grouping to "GRADE" as they are similar attribute. This is where facet plot would be considered to see if "GRADE" could be converted into a numerical variable.
+Facet plot usually needs two numerical variables and a categorical variable. While "CDNTN" are now divided into two groups, it wouldn't be a good idea to do the same grouping to "GRADE" as they are similar attributes. This is where facet plot would be considered to see if "GRADE" could be converted into a numerical variable.
 ```{r warning=FALSE, message=FALSE}
+# facet points by grade
 ggplot(house.price[!house.price$GRADE %in% 
       c("Exceptional-A", "Exceptional-B", "Fair Quality"), ], 
       aes(GBA, PRICE_TRANS, color = GRADE)) + 
@@ -592,6 +592,7 @@ ggplot(house.price[!house.price$GRADE %in%
 ```
 
 ```{r}
+# median price by grade
 GRADE_median <- house.price %>%
   group_by(GRADE) %>%
   summarise(MEDIAN_PRICE = median(PRICE_TRANS)) %>%
@@ -603,6 +604,7 @@ kable(GRADE_median) %>%
 ```
 
 ```{r}
+# new variable median price by grade
 house.price$GRADE_MEDIAN_PRICE <- lapply(house.price$GRADE, function(x) 
   GRADE_median[match(x, GRADE_median$GRADE), "MEDIAN_PRICE"][[1]])
 house.price$GRADE_MEDIAN_PRICE <- as.numeric(house.price$GRADE_MEDIAN_PRICE)
@@ -614,9 +616,12 @@ As seen in the graph and the table, prices are distinctively different by grade.
 
 ------
 
+\  
 
 ## Diagnostic Analysis
-Recalling the goal of this project, evaluating linear models is crucial to building the best model. Diagnostic analysis is the step to do that in various ways such as Q-Q plot, Residual vs. Fitted plot, Cook's distance, and so on. These techniques are designed to test the assumptions like constant variance, normality of residuals, and random error. The first step for this is to build a linear model that will work as baseline and be modified later.
+Recalling the goal of this project, evaluating linear models is crucial to building the best model. Diagnostic analysis is the step to do that in various ways such as *Q-Q plot*, *Residual vs. Fitted plot*, *Cook's distance*, and so on. These techniques are designed to test the assumptions like constant variance, normality of residuals, and random error. The first step for this is building a linear model that will work as baseline and be modified later.
+
+$$Cook's Distance (D_i)=\frac{(y_i-\hat{y}_i)^2}{p\times MSE}[\frac{h_ii}{(1-h_ii)^2}]$$
 ```{r}
 house.lm <- lm(PRICE_TRANS ~ ., data = house.price)
 summary(house.lm)
@@ -624,6 +629,7 @@ summary(house.lm)
 
 There are a few variables that are not significant. "ROOMS" must be due to collinearity, and the rest are seemingly because they are not useful. Interestingly enough, "Ward 6" has already been problematic on the map earlier.
 
+\  
 
 ### __Diagnostic Plots and Influential Points__
 With the baseline model, diagnostic plots can be drawn. Residual vs. Fitted plot should have the balancing line horizontally around zero. The ideal Q-Q plot follows the diagonal line. Cook's distance is used as limits which dots should not go over. It gives the indice of observations with problems so they can be excluded.
@@ -664,9 +670,12 @@ resid.plot(house.lm)
 
 From the warning of Q-Q plot, the distribution should be checked again. The gray in the back is normal distribution when the red area is the data distribution. It has a high peak with light tails both sides, suggesting that most of the observations are centered around the mean. As long as it is a symmetric bell shape, it won't cause a serious problem. However, it still looks like there are some extreme values from the long tails.
 
+\  
 
 ### __Remove Influential Points: *DFBETA*__
 One of the methods to detect influential points is *DFBETA* which measures how much impact each observation has on a particular predictor. Recalling the correlation matrix, the top three will be investigated in order to remove influential points. The ultimate goal of this process is again finding the general trend, not biased by extreme values.
+
+$$DFBETAS_i=\frac{\hat{\beta}_i-\hat{\beta}_{(i)j}}{s_{(i)}\sqrt{(X^TX)_{jj}}}$$
 ```{r}
 # dfbeta
 dfbeta.GBA <- dfbetaPlots(house.lm, terms = "GBA")
@@ -726,12 +735,13 @@ On the left is before eliminating the influential points and on the right is aft
 
 ------
 
+\  
 
 ## Best Model
 Although there are many other measurements to select features, two representative are used for this project. One is Adjusted R-squared to measure the overall fit, and the other is AIC to see if adding another feature is helpful for modeling.
 
 ### __Adjusted R-Square__
-
+Unlike R-square, Adjusted R-square takes number of parameters added into consideration. That is, it could be worse to add a new variable if the variable is not helpful enough to explain errors.
 ```{r}
 # full linear model
 rsq.lm <- lm(PRICE_TRANS ~ ., data = house.price)
@@ -754,6 +764,7 @@ x <- x[, -c(11, 17)]
 
 The two features the 4th model excludes happen to be what already had issues on significance. Now that it is clear they do not need to be in the model, "ROOF" and "WARD 6" can be let go. Nevertheless, it is safe to see feature selection at a different angle.
 
+\  
 
 ### __AIC__
 Basically, AIC is designed to decide whether to include an additinal variable or not. The lower the score is, the better the model is. The process runs through features and calculate AIC and continue until AIC stops decreasing. The following starts with a null model and add a feature one by one to see how AIC changes.
@@ -772,6 +783,7 @@ As the result shows, the full model has the lowest AIC, meaning that adding all 
 
 ------
 
+\  
 
 ## Prediction
 A predictive model can be used to predict a house price for one purpose, and to see if a house value is evaluated properly for another. The principle steps start with splitting data set, train one part, and test the model against the rest. Since training set and testing set could be biased, partitioning should loop through the data set (Cross Validation).
@@ -792,6 +804,7 @@ summary(lm.model)
 
 The result is not very different from the initial modeling, claiming that the prediction model performs well. All the variables are now significant, and Adjusted R-squared is very slightly lower than R-squared. Putting them altogether, there is no more feature to be eliminated. One last step is to see how well this model works.
 
+\  
 
 ### __Evaluation: *RMSE*__
 Root Mean Square Error is widely used to evaluate a regression model. This is the average of differences between true values and predicted values of each observation with sign ignored. Note that the RMSE 68.14 is from unit price transformed as square root. 
@@ -856,24 +869,43 @@ Finally, histograms of true values and predicted values can be drawn together to
 
 ------
 
+\  
+
 ## Conclusion
+Beginning with about 50 variables available, we successfully selected 16 features to predict house prices. *Adjusted R-square* and *AIC* were used as the criteria for feature selection. Some of them are as follows.
+
+* Numerical: Number of bathrooms, House size in sqft, Year built
+* Categorical: Ward, Condition, Struct
+
+House prices become more expensive as number of rooms and size increase. Area such as ward and house condition critically affect prices but building materials do not as much. The following diagnostic plots are what we used for checking the assumptions.
+
+* _Resisual vs. Fitted Plot_: Constant variance
+* _Q-Q Plot_: Normality of residuals
+
+After the diagnosis, *DFBETAS* was used for filtering influential points without which the linear model was improved to meet the assumptions. Through all the processes, we could finally build a predictive model. A training set and a validation set were separated to train the model only with the training set and to test it against the testing set. By doing so, the model could be tested with data it didn't see for training.
+
+The performance of the model was measured as 0.89 R-squared. More realistically, the median error was \$63,025 and less than \$20,000 for average houses priced between \$650,000 and \$660,000. Considering how expensive houses in Washington D.C. are, error \$20,000 or less is quite impressive even if there could be further improvement if with more variables added.
+
 
 ------
 
-## References
+\  
 
-[kable](https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html)
-[Mapping](http://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html#)
-[ggmap Github](https://github.com/dkahle/ggmap)
-[ggmap stamen](https://rdrr.io/cran/ggmap/man/get_stamenmap.html)
-[corrplot](https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html)
-[type of apply](https://www.guru99.com/r-apply-sapply-tapply.html)
-[Linear Regression Example](http://r-statistics.co/Linear-Regression.html)
-[Scatter Plot](http://www.cookbook-r.com/Graphs/Scatterplots_(ggplot2)/)
-[Outlier](https://www.r-bloggers.com/outlier-detection-and-treatment-with-r/)
-[Boxplot](http://www.sthda.com/english/wiki/ggplot2-box-plot-quick-start-guide-r-software-and-data-visualization)
-[VIF](http://www.scriptwarp.com/warppls/pubs/Kock_Lynn_2012.pdf)
-[leaps](https://rdrr.io/cran/leaps/man/regsubsets.html)
-[Diagnosis & Variable Selection](https://www.statmethods.net/stats/regression.html)
-[Q-Q Plot Interpretation](https://stats.stackexchange.com/questions/101274/how-to-interpret-a-qq-plot)
-[Diagnostic Plots](https://data.library.virginia.edu/diagnostic-plots/)
+## References
+__Theory__
+
+* [VIF](http://www.scriptwarp.com/warppls/pubs/Kock_Lynn_2012.pdf)
+* [Outlier](https://www.r-bloggers.com/outlier-detection-and-treatment-with-r/)
+* [DFBETAS](https://www.sfu.ca/sasdoc/sashtml/stat/chap55/sect38.htm)
+* [Diagnosis & Variable Selection](https://www.statmethods.net/stats/regression.html)
+* [Q-Q Plot Interpretation](https://stats.stackexchange.com/questions/101274/how-to-interpret-a-qq-plot)
+* [Diagnostic Plots](https://data.library.virginia.edu/diagnostic-plots/)
+* [Cook's Distance](https://onlinecourses.science.psu.edu/stat501/node/340/)
+
+__R Syntax__
+
+* [Mapping](http://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html#)
+* [Ggmap overview](https://github.com/dkahle/ggmap), [Ggmap example](https://rdrr.io/cran/ggmap/man/get_stamenmap.html)
+* [Corrplot](https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html)
+* [Linear Regression Example](http://r-statistics.co/Linear-Regression.html)
+* [Leaps](https://rdrr.io/cran/leaps/man/regsubsets.html)
